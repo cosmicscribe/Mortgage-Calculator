@@ -1,0 +1,67 @@
+Project run commands
+
+Windows PowerShell note:
+
+If plain npm is blocked by execution policy, use npm.cmd.
+
+Install everything from the project root:
+
+npm run install:all
+npm.cmd run install:all
+
+Run frontend from the project root:
+
+npm run dev:frontend
+npm.cmd run dev:frontend
+
+Run backend from the project root:
+
+npm run dev:backend
+npm.cmd run dev:backend
+
+Run admin from the project root:
+
+npm run dev:admin
+npm.cmd run dev:admin
+
+Admin URL:
+
+http://localhost:3000/admin
+
+Frontend URL:
+
+http://localhost:3000
+
+Backend URL:
+
+http://localhost:4000
+
+Run frontend from its folder:
+
+cd frontend
+npm install
+npm run dev
+npm.cmd install
+npm.cmd run dev
+
+Run backend from its folder:
+
+cd backend
+npm install
+npm run start:dev
+npm.cmd install
+npm.cmd run start:dev
+
+Run admin from its folder:
+
+The admin panel is part of the frontend Next.js app.
+
+cd frontend
+npm install
+npm run dev
+npm.cmd install
+npm.cmd run dev
+
+Then open:
+
+http://localhost:3000/admin

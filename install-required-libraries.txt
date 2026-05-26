@@ -1,0 +1,55 @@
+Install all required libraries:
+
+npm run install:all
+npm.cmd run install:all
+
+Install frontend libraries only:
+
+cd frontend
+npm install
+npm.cmd install
+
+Install backend libraries only:
+
+cd backend
+npm install
+npm.cmd install
+
+Frontend dependencies:
+
+framer-motion
+lucide-react
+next
+react
+react-dom
+recharts
+zod
+
+Frontend development dependencies:
+
+@types/node
+@types/react
+@types/react-dom
+autoprefixer
+eslint
+eslint-config-next
+postcss
+tailwindcss
+typescript
+
+Backend dependencies:
+
+@nestjs/common
+@nestjs/core
+@nestjs/platform-express
+class-transformer
+class-validator
+reflect-metadata
+rxjs
+zod
+
+Backend development dependencies:
+
+@nestjs/cli
+@types/node
+typescript
