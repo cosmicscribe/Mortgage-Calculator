@@ -93,6 +93,8 @@ const initialLeadForm: LeadFormState = {
   consent: false
 };
 
+const SETTINGS_SYNC_INTERVAL_MS = 30000;
+
 const recommendationStyles = {
   BENEFICIAL: {
     accent: "#0f8a6f",
@@ -385,6 +387,8 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false);
   const formRef = useRef(form);
   const rateModeRef = useRef(rateMode);
+  const calculationRequestIdRef = useRef(0);
+  const inFlightCalculationKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -399,6 +403,16 @@ export default function HomePage() {
   }, [rateMode]);
 
   async function calculate(nextForm = form) {
+    const payload = toPayload(nextForm);
+    const calculationKey = JSON.stringify(payload);
+
+    if (inFlightCalculationKeyRef.current === calculationKey) {
+      return;
+    }
+
+    const requestId = calculationRequestIdRef.current + 1;
+    calculationRequestIdRef.current = requestId;
+    inFlightCalculationKeyRef.current = calculationKey;
     setIsLoading(true);
     setError(null);
 
@@ -408,7 +422,7 @@ export default function HomePage() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(toPayload(nextForm))
+        body: calculationKey
       });
 
       if (!response.ok) {
@@ -416,31 +430,42 @@ export default function HomePage() {
       }
 
       const data = (await response.json()) as RefinanceResult;
-      setResult(data);
+      if (calculationRequestIdRef.current === requestId) {
+        setResult(data);
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Calculation failed.");
+      if (calculationRequestIdRef.current === requestId) {
+        setError(caught instanceof Error ? caught.message : "Calculation failed.");
+      }
     } finally {
-      setIsLoading(false);
+      if (inFlightCalculationKeyRef.current === calculationKey) {
+        inFlightCalculationKeyRef.current = null;
+      }
+
+      if (calculationRequestIdRef.current === requestId) {
+        setIsLoading(false);
+      }
     }
   }
 
-  async function syncLenderSettings(recalculate = false) {
+  async function syncLenderSettings(recalculate = false): Promise<FormState | null> {
     try {
       const response = await fetch("/admin/api/settings", {
         cache: "no-store"
       });
 
       if (!response.ok) {
-        return;
+        return null;
       }
 
       const payload = (await response.json()) as { settings: PublicSettings };
       const nextRate = payload.settings.defaultInterestRate.toFixed(2);
+      let nextForm: FormState | null = null;
       setLenderDefaultRate(payload.settings.defaultInterestRate);
       setSettingsSyncedAt(new Date());
 
       if (rateModeRef.current === "lender" && formRef.current.newRate !== nextRate) {
-        const nextForm = { ...formRef.current, newRate: nextRate };
+        nextForm = { ...formRef.current, newRate: nextRate };
         formRef.current = nextForm;
         setForm(nextForm);
 
@@ -448,20 +473,35 @@ export default function HomePage() {
           void calculate(nextForm);
         }
       }
+
+      return nextForm;
     } catch {
       // Keep the calculator usable if the settings endpoint is temporarily unavailable.
+      return null;
     }
   }
 
   useEffect(() => {
-    void calculate(initialForm);
-    void syncLenderSettings(true);
+    let isCancelled = false;
+
+    async function initialize() {
+      const syncedForm = await syncLenderSettings(false);
+
+      if (!isCancelled) {
+        void calculate(syncedForm ?? initialForm);
+      }
+    }
+
+    void initialize();
 
     const intervalId = window.setInterval(() => {
       void syncLenderSettings(true);
-    }, 5000);
+    }, SETTINGS_SYNC_INTERVAL_MS);
 
-    return () => window.clearInterval(intervalId);
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
   }, []);
 
   const chartData = useMemo(() => {
