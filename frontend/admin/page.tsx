@@ -50,6 +50,20 @@ type LeadDetails = {
 
 const statusOptions: LeadStatus[] = ["new", "contacted", "qualified", "converted", "rejected"];
 
+async function readJsonResponse<T>(response: Response, label: string): Promise<T> {
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`${label} failed with ${response.status}: ${text || response.statusText}`);
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`${label} returned invalid JSON.`);
+  }
+}
+
 function money(value: number, country: "US" | "CA") {
   return new Intl.NumberFormat(country === "CA" ? "en-CA" : "en-US", {
     style: "currency",
@@ -109,36 +123,45 @@ export default function AdminPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [settings, setSettings] = useState<AdminSettings | null>(null);
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
   async function loadAdminData(nextSelectedId = selectedId) {
     setIsLoading(true);
+    setErrorMessage(null);
 
-    const [leadsResponse, analyticsResponse, settingsResponse] = await Promise.all([
-      fetch("/admin/api/leads"),
-      fetch("/admin/api/analytics"),
-      fetch("/admin/api/settings")
-    ]);
-    const leadsPayload = (await leadsResponse.json()) as { leads: LeadListItem[] };
-    const analyticsPayload = (await analyticsResponse.json()) as { analytics: Analytics };
-    const settingsPayload = (await settingsResponse.json()) as { settings: AdminSettings };
-    const nextLeads = leadsPayload.leads;
-    const chosenId = nextSelectedId ?? nextLeads[0]?.id ?? null;
+    try {
+      const [leadsResponse, analyticsResponse, settingsResponse] = await Promise.all([
+        fetch("/admin/api/leads"),
+        fetch("/admin/api/analytics"),
+        fetch("/admin/api/settings")
+      ]);
+      const leadsPayload = await readJsonResponse<{ leads: LeadListItem[] }>(leadsResponse, "Leads request");
+      const analyticsPayload = await readJsonResponse<{ analytics: Analytics }>(analyticsResponse, "Analytics request");
+      const settingsPayload = await readJsonResponse<{ settings: AdminSettings }>(settingsResponse, "Settings request");
+      const nextLeads = leadsPayload.leads;
+      const chosenId = nextSelectedId ?? nextLeads[0]?.id ?? null;
 
-    setLeads(nextLeads);
-    setAnalytics(analyticsPayload.analytics);
-    setSettings(settingsPayload.settings);
-    setSelectedId(chosenId);
+      setLeads(nextLeads);
+      setAnalytics(analyticsPayload.analytics);
+      setSettings(settingsPayload.settings);
+      setSelectedId(chosenId);
 
-    if (chosenId) {
-      const detailsResponse = await fetch(`/admin/api/leads/${chosenId}`);
-      setDetails((await detailsResponse.json()) as LeadDetails);
+      if (chosenId) {
+        const detailsResponse = await fetch(`/admin/api/leads/${chosenId}`);
+        setDetails(await readJsonResponse<LeadDetails>(detailsResponse, "Lead details request"));
+      } else {
+        setDetails(null);
+      }
+
+      setLastSyncedAt(new Date());
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Could not load admin data.");
+    } finally {
+      setIsLoading(false);
     }
-
-    setLastSyncedAt(new Date());
-    setIsLoading(false);
   }
 
   useEffect(() => {
@@ -160,8 +183,14 @@ export default function AdminPage() {
 
   async function selectLead(id: string) {
     setSelectedId(id);
-    const response = await fetch(`/admin/api/leads/${id}`);
-    setDetails((await response.json()) as LeadDetails);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`/admin/api/leads/${id}`);
+      setDetails(await readJsonResponse<LeadDetails>(response, "Lead details request"));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Could not load lead details.");
+    }
   }
 
   async function updateStatus(status: LeadStatus) {
@@ -176,7 +205,7 @@ export default function AdminPage() {
       },
       body: JSON.stringify({ status })
     });
-    const payload = (await response.json()) as { lead: AdminLead };
+    const payload = await readJsonResponse<{ lead: AdminLead }>(response, "Status update request");
 
     setDetails((current) => (current ? { ...current, lead: payload.lead } : current));
     setLeads((current) => current.map((lead) => (lead.id === payload.lead.id ? { ...lead, status } : lead)));
@@ -271,6 +300,12 @@ export default function AdminPage() {
             </a>
           </div>
         </header>
+
+        {errorMessage ? (
+          <div className="admin-error" role="alert">
+            {errorMessage}
+          </div>
+        ) : null}
 
         <section className="admin-stats" id="analytics">
           <motion.div className="admin-stat" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>

@@ -1021,14 +1021,19 @@ export default function HomePage() {
                     <strong>{months(result.comparison.breakEvenMonths)}</strong>
                   </div>
                   <div>
-                    <span>Interest Difference (Rate Only)</span>
-                    <strong>{money(result.comparison.interestDifferenceRateOnly, form.country)}</strong>
-                    <small>This reflects interest only and does not include upfront costs or cash-out.</small>
+                    <span>Savings over your stay period</span>
+                    <strong>{money(result.comparison.interestSavedStayPeriod, form.country)}</strong>
+                    <small>Primary interest metric based on your expected stay.</small>
+                  </div>
+                  <div>
+                    <span>Lifetime interest impact</span>
+                    <strong>{money(result.comparison.interestSavedFullTerm, form.country)}</strong>
+                    <small>Secondary metric if the new loan runs to payoff.</small>
                   </div>
                 </div>
               </motion.section>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
                 <Metric
                   detail={`${form.currentRemainingYears} years remaining`}
                   icon={CircleDollarSign}
@@ -1050,18 +1055,25 @@ export default function HomePage() {
                   value={months(result.comparison.breakEvenMonths)}
                 />
                 <Metric
-                  detail="Monthly savings across your expected stay minus upfront costs and cash-out."
+                  detail="Interest and amortization impact over your stay. Upfront costs are reflected in true net outcome."
                   icon={Scale}
+                  label="True monthly benefit"
+                  tone={result.comparison.effectiveMonthlyBenefit >= 0 ? "good" : "warm"}
+                  value={money(result.comparison.effectiveMonthlyBenefit, form.country)}
+                />
+                <Metric
+                  detail="Monthly savings across your expected stay minus upfront costs and cash-out interest cost."
+                  icon={Banknote}
                   label="True Net Outcome (Stay Period)"
                   tone={result.comparison.trueNetOutcome >= 0 ? "good" : "warm"}
                   value={compactMoney(result.comparison.trueNetOutcome, form.country)}
                 />
                 <Metric
-                  detail="This reflects interest only and does not include upfront costs or cash-out."
+                  detail="Primary interest impact over your expected stay period."
                   icon={LineChart}
-                  label="Interest Difference (Rate Only)"
-                  tone={result.comparison.interestDifferenceRateOnly >= 0 ? "good" : "warm"}
-                  value={compactMoney(result.comparison.interestDifferenceRateOnly, form.country)}
+                  label="Savings over your stay period"
+                  tone={result.comparison.interestSavedStayPeriod >= 0 ? "good" : "warm"}
+                  value={compactMoney(result.comparison.interestSavedStayPeriod, form.country)}
                 />
               </div>
 
@@ -1087,7 +1099,10 @@ export default function HomePage() {
                     <div>
                       <p className="text-sm font-black text-[#9d3529]">Cash-out warning</p>
                       <p className="mt-1 text-sm font-bold leading-6 text-[#66322b]">
-                        Cash-out increases your debt and reduces net benefit.
+                        Cash-out adds {money(result.comparison.cashOutCostOverStay, form.country)} in modeled interest cost over your stay period.
+                        {result.comparison.cashOutROI !== null
+                          ? ` You are turning ${wholeMoney(result.comparison.cashOutAmount, form.country)} into ${wholeMoney(result.comparison.trueNetOutcome, form.country)}, a ${result.comparison.cashOutROI.toFixed(2)}x return over your stay.`
+                          : ""}
                       </p>
                     </div>
                   </div>
@@ -1372,7 +1387,9 @@ export default function HomePage() {
                       {result.decision.riskScoreFactors.length ? (
                         <div className="confidence-factors mt-3">
                           {result.decision.riskScoreFactors.map((factor) => (
-                            <span key={`${factor.points}-${factor.message}`}>+{factor.points} {factor.message}</span>
+                            <span key={`${factor.points}-${factor.message}`}>
+                              {factor.points > 0 ? `+${factor.points}` : factor.points} {factor.message}
+                            </span>
                           ))}
                         </div>
                       ) : null}

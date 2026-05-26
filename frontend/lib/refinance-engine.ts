@@ -38,7 +38,9 @@ export type RiskFactorKey =
   | "TERM_EXTENSION_MINOR"
   | "INTEREST_INCREASE"
   | "LATE_BREAK_EVEN"
-  | "LOW_SAVINGS";
+  | "TIGHT_RECOVERY_WINDOW"
+  | "LOW_SAVINGS"
+  | "RATE_SENSITIVITY";
 
 export type RiskScoreFactor = {
   key: RiskFactorKey;
@@ -84,13 +86,35 @@ export type AmortizationMonth = {
 };
 
 export type RefinanceResult = {
+  currentPayment: number;
+  newPayment: number;
+  monthlySavings: number;
+  breakEvenMonths: number | null;
+  interestSavedStayPeriod: number;
+  interestSavedFullTerm: number;
+  effectiveMonthlyBenefit: number;
+  trueNetOutcome: number;
+  cashOutROI: number | null;
+  riskScore: number;
+  riskLevel: "Low" | "Moderate" | "High";
+  termExtensionMonths: number;
+  cashOutCostOverStay: number;
   monthly_payment_current: number;
   monthly_payment_new: number;
   monthly_savings: number;
   break_even_months: number | null;
+  exact_break_even_month: number | null;
   stay_period_savings: number;
   true_net_outcome: number;
   interest_difference_rate_only: number;
+  interest_saved_stay_period: number;
+  interest_saved_full_term: number;
+  effective_monthly_benefit: number;
+  cash_out_cost_over_stay: number;
+  cash_out_roi: number | null;
+  net_benefit_after_cash_out: number;
+  term_extension_months: number;
+  risk_level: "Low" | "Moderate" | "High";
   recommendation: "Refinance is beneficial" | "Refinance has trade-offs" | "Refinance is not beneficial";
   recommendation_type: RecommendationType;
   headline: string;
@@ -125,6 +149,8 @@ export type RefinanceResult = {
     total_interest_current: number;
     total_interest_new: number;
     interest_difference: number;
+    interest_saved_stay_period: number;
+    interest_saved_full_term: number;
     payoff_time_difference: number;
   };
   current: {
@@ -156,11 +182,20 @@ export type RefinanceResult = {
   comparison: {
     monthlySavings: number;
     breakEvenMonths: number | null;
+    exactBreakEvenMonth: number | null;
     stayPeriodSavings: number;
     trueNetOutcome: number;
     debtVsBenefit: DebtVsBenefitInsight;
     interestDifferenceRateOnly: number;
+    interestSavedStayPeriod: number;
+    interestSavedFullTerm: number;
+    effectiveMonthlyBenefit: number;
     cashOutAmount: number;
+    cashOutCostOverStay: number;
+    cashOutROI: number | null;
+    netBenefitAfterCashOut: number;
+    termExtensionMonths: number;
+    riskLevel: "Low" | "Moderate" | "High";
     pointsCost: number;
     totalUpfrontCost: number;
     totalClosingCosts: number;
@@ -436,46 +471,44 @@ function buildConfidenceScore({
 
 function buildAdvisorRiskScore({
   cashOutAmount,
+  currentLoanBalance,
   debtVsBenefitRatio,
   termExtensionMonths,
   interestDifference,
   breakEvenMonths,
   expectedStayMonths,
-  monthlySavings
+  monthlySavings,
+  currentPayment,
+  currentRate,
+  newRate
 }: {
   cashOutAmount: number;
+  currentLoanBalance: number;
   debtVsBenefitRatio: number | null;
   termExtensionMonths: number;
   interestDifference: number;
   breakEvenMonths: number | null;
   expectedStayMonths: number;
   monthlySavings: number;
+  currentPayment: number;
+  currentRate: number;
+  newRate: number;
 }) {
-  const termExtensionYears = termExtensionMonths / 12;
+  const rateImprovement = currentRate - newRate;
   const candidateFactors: RiskScoreFactor[] = [
     {
       key: "CASH_OUT",
-      points: cashOutAmount > 0 ? 30 : 0,
-      message: "Cash-out significantly increases your loan balance."
-    },
-    {
-      key: "DEBT_VS_BENEFIT_EXTREME",
-      points: debtVsBenefitRatio !== null && debtVsBenefitRatio >= 100 ? 15 : 0,
-      message: "Debt increase is extremely high compared with net benefit."
-    },
-    {
-      key: "DEBT_VS_BENEFIT_HIGH",
-      points: debtVsBenefitRatio !== null && debtVsBenefitRatio >= 50 && debtVsBenefitRatio < 100 ? 10 : 0,
-      message: "Debt increase is high compared with net benefit."
+      points: cashOutAmount > currentLoanBalance * 0.05 ? 20 : 0,
+      message: "Cash-out is more than 5% of the loan balance."
     },
     {
       key: "TERM_EXTENSION_MAJOR",
-      points: termExtensionYears >= 5 ? 25 : 0,
+      points: termExtensionMonths > 60 ? 25 : 0,
       message: "Loan term is extended by 5+ years."
     },
     {
       key: "TERM_EXTENSION_MINOR",
-      points: termExtensionYears > 0 && termExtensionYears < 5 ? 15 : 0,
+      points: termExtensionMonths > 36 && termExtensionMonths <= 60 ? 15 : 0,
       message: "Loan term is extended."
     },
     {
@@ -484,23 +517,50 @@ function buildAdvisorRiskScore({
       message: "Total interest increases over the full loan."
     },
     {
+      key: "RATE_SENSITIVITY",
+      points: rateImprovement > 0 && rateImprovement < 0.75 ? 8 : rateImprovement > 0 && rateImprovement < 1 ? 5 : 0,
+      message:
+        rateImprovement > 0 && rateImprovement < 0.75
+          ? "Benefit is fragile because the rate improvement is under 0.75%."
+          : "Benefit depends on a relatively small rate improvement."
+    },
+    {
       key: "LATE_BREAK_EVEN",
-      points: breakEvenMonths !== null && breakEvenMonths > expectedStayMonths * 0.7 ? 20 : 0,
-      message: "Break-even occurs late in your stay period."
+      points: breakEvenMonths !== null && breakEvenMonths > 24 ? 25 : 0,
+      message: "Break-even is longer than 24 months."
+    },
+    {
+      key: "TIGHT_RECOVERY_WINDOW",
+      points:
+        breakEvenMonths !== null && expectedStayMonths > 0 && breakEvenMonths > expectedStayMonths * 0.7 ? 10 : 0,
+      message: "Tight recovery window: most savings occur late in your stay."
     },
     {
       key: "LOW_SAVINGS",
       points: monthlySavings > 0 && monthlySavings < 100 ? 15 : 0,
       message: "Monthly savings are relatively small."
+    },
+    {
+      key: "LOW_SAVINGS",
+      points: currentPayment > 0 && monthlySavings / currentPayment > 0.15 ? -20 : 0,
+      message: "Strong monthly savings reduce refinance risk."
+    },
+    {
+      key: "LATE_BREAK_EVEN",
+      points: breakEvenMonths !== null && breakEvenMonths < 12 ? -15 : 0,
+      message: "Fast break-even reduces refinance risk."
     }
   ];
-  const factors = candidateFactors.filter((factor) => factor.points > 0);
+  const factors = candidateFactors.filter((factor) => factor.points !== 0);
 
   const score = Math.min(
     100,
-    factors.reduce((total, factor) => total + factor.points, 0)
+    Math.max(
+      0,
+      factors.reduce((total, factor) => total + factor.points, 0)
+    )
   );
-  const primaryFactor = [...factors].sort((a, b) => b.points - a.points)[0] ?? null;
+  const primaryFactor = [...factors].filter((factor) => factor.points > 0).sort((a, b) => b.points - a.points)[0] ?? null;
   const primaryRiskDriver = primaryFactor
     ? {
         key: primaryFactor.key,
@@ -585,9 +645,14 @@ function buildDecision(
   monthlySavings: number,
   breakEvenMonths: number | null,
   trueNetOutcome: number,
-  interestDifference: number,
+  interestSavedStayPeriod: number,
+  interestSavedFullTerm: number,
+  effectiveMonthlyBenefit: number,
+  cashOutCostOverStay: number,
+  cashOutROI: number | null,
   trueCostDifference: number,
-  newLoanAmount: number
+  newLoanAmount: number,
+  currentPayment: number
 ): RefinanceResult["decision"] {
   const expectedStayMonths = yearsToMonths(input.expectedStayYears);
   const termMonths = yearsToMonths(input.termYears ?? 5);
@@ -597,7 +662,7 @@ function buildDecision(
   const hasTermExtension = input.newAmortizationYears > input.currentRemainingYears;
   const termExtensionMonths = Math.max(0, yearsToMonths(input.newAmortizationYears - input.currentRemainingYears));
   const hasSignificantTermExtension = termExtensionMonths > 24;
-  const hasInterestIncrease = interestDifference < 0;
+  const hasInterestIncrease = interestSavedFullTerm < 0;
   const hasSmallSavings = monthlySavings > 0 && monthlySavings < 50;
   const hasHardRiskFactors = hasCashOut || hasTermExtension || hasInterestIncrease;
   const debtVsBenefit = buildDebtVsBenefitInsight({
@@ -606,12 +671,16 @@ function buildDecision(
   });
   const advisorRisk = buildAdvisorRiskScore({
     cashOutAmount: input.cashOutAmount,
+    currentLoanBalance: input.currentLoanBalance,
     debtVsBenefitRatio: debtVsBenefit?.ratio ?? null,
     termExtensionMonths,
-    interestDifference,
+    interestDifference: interestSavedFullTerm,
     breakEvenMonths,
     expectedStayMonths,
-    monthlySavings
+    monthlySavings,
+    currentPayment,
+    currentRate: input.currentRate,
+    newRate: input.newRate
   });
   const advisorRiskBand = riskBand(advisorRisk.score);
   const leadScore = Math.max(0, 100 - advisorRisk.score);
@@ -637,6 +706,10 @@ function buildDecision(
   const reasons: string[] = [];
   const warnings: string[] = [];
   const riskFlags: RiskFlag[] = [];
+  const positiveReturnRiskInsight =
+    cashOutROI !== null && cashOutROI > 1 && advisorRisk.score >= 60
+      ? `Positive return, but structure-driven risk: this refinance generates a ${cashOutROI.toFixed(2)}x return on the cash taken out, but carries elevated risk because gains depend on staying long enough, preserving the rate advantage, and accepting the term structure.`
+      : null;
   const keyPoints = [
     `Monthly savings: ${formatCurrency(monthlySavings)}`,
     `Break-even: ${formatMonths(breakEvenMonths)}`,
@@ -644,7 +717,9 @@ function buildDecision(
     `Advisor risk score: ${advisorRisk.score}/100 (${advisorRiskBand})`,
     `Lead score: ${leadScore}/100 (${advisorLeadQuality})`,
     `True cost impact: ${formatCurrency(trueCostDifference)}`,
-    `Interest difference (rate only): ${formatCurrency(interestDifference)}`
+    `Savings over your stay period: ${formatCurrency(interestSavedStayPeriod)}`,
+    `True monthly benefit: ${formatCurrency(effectiveMonthlyBenefit)}`,
+    `Lifetime interest impact: ${formatCurrency(interestSavedFullTerm)}`
   ];
   const explanationPoints = [
     monthlySavings > 0
@@ -656,8 +731,16 @@ function buildDecision(
     `Stay vs cost comparison: You plan to stay ${expectedStayMonths} months, producing ${formatCurrency(trueNetOutcome)} in true net outcome after upfront costs and cash-out.`,
     `True net insight: ${trueNetInsight}`,
     `Advisor risk score: ${advisorRisk.score}/100 (${advisorRiskBand}). A score of 30 or higher keeps a positive-net refinance in trade-offs rather than beneficial.`,
-    `Interest difference (rate only): ${formatCurrency(interestDifference)}. This reflects interest only and does not include upfront costs or cash-out.`
+    `Savings over your stay period: ${formatCurrency(interestSavedStayPeriod)}. This is the primary interest metric because it matches your expected stay.`,
+    `True monthly benefit: ${formatCurrency(effectiveMonthlyBenefit)} per month based on stay-period interest savings.`,
+    `Lifetime interest impact: ${formatCurrency(interestSavedFullTerm)}. This is secondary because it assumes the loan runs to payoff.`
   ];
+
+  if (positiveReturnRiskInsight) {
+    keyPoints.push(positiveReturnRiskInsight);
+    explanationPoints.push(positiveReturnRiskInsight);
+    warnings.push("Positive cash-out return is paired with high structural risk.");
+  }
 
   for (const factor of advisorRisk.factors) {
     riskFlags.push({
@@ -681,9 +764,18 @@ function buildDecision(
   if (input.cashOutAmount > 0) {
     keyPoints.push(`Cash-out impact: Cash-out increases your loan balance by ${formatCurrency(input.cashOutAmount)}.`);
     explanationPoints.push("Cash-out warning: Cash-out increases your debt and reduces net benefit.");
+    explanationPoints.push(`Cash-out interest cost over your stay: ${formatCurrency(cashOutCostOverStay)}.`);
     if (debtVsBenefit) {
       keyPoints.push(`Debt vs benefit: ${debtVsBenefit.message}`);
       explanationPoints.push(`Debt vs benefit: ${debtVsBenefit.message} ${debtVsBenefit.interpretation}`);
+    }
+    if (cashOutROI !== null) {
+      keyPoints.push(
+        `Cash-out ROI: You are turning ${formatCurrencyShort(input.cashOutAmount)} into ${formatCurrencyShort(trueNetOutcome)} over your stay, a ${cashOutROI.toFixed(2)}x return.`
+      );
+      explanationPoints.push(
+        `Cash-out ROI: You are turning ${formatCurrencyShort(input.cashOutAmount)} into ${formatCurrencyShort(trueNetOutcome)} over your stay, a ${cashOutROI.toFixed(2)}x return.`
+      );
     }
     if (trueNetOutcome < 0) {
       explanationPoints.push("Taking cash-out increases your loan balance and results in a net financial loss over your expected stay period.");
@@ -710,10 +802,10 @@ function buildDecision(
   if (hasInterestIncrease) {
     riskFlags.push({
       level: "high_risk",
-      message: `Total interest increases by ${formatCurrency(Math.abs(interestDifference))}. This is interest only.`
+      message: `Lifetime interest increases by ${formatCurrency(Math.abs(interestSavedFullTerm))}. This is the full-term interest impact.`
     });
     warnings.push("Total interest increases under the proposed loan.");
-  } else if (interestDifference === 0) {
+  } else if (interestSavedFullTerm === 0) {
     riskFlags.push({
       level: "info",
       message: "Total interest is unchanged before considering upfront costs or cash-out."
@@ -795,6 +887,12 @@ function buildDecision(
         ? "Term extension present"
         : null,
     hasInterestIncrease ? "Interest increase over lifetime" : null,
+    advisorRisk.factors.some((factor) => factor.key === "RATE_SENSITIVITY")
+      ? "Rate sensitivity"
+      : null,
+    advisorRisk.factors.some((factor) => factor.key === "TIGHT_RECOVERY_WINDOW")
+      ? "Tight recovery window"
+      : null,
     debtVsBenefit?.severity === "high"
       ? "High debt-vs-benefit trade-off"
       : debtVsBenefit?.severity === "moderate"
@@ -1020,6 +1118,91 @@ function buildAmortizationPreview({
   return points;
 }
 
+function sumScheduleInterest(schedule: AmortizationMonth[], months: number) {
+  return roundMoney(schedule.slice(0, months).reduce((total, row) => total + row.interest_paid, 0));
+}
+
+function calculateExactBreakEvenMonth({
+  currentSchedule,
+  proposedSchedule,
+  monthlySavings,
+  recoveryTarget
+}: {
+  currentSchedule: AmortizationMonth[];
+  proposedSchedule: AmortizationMonth[];
+  monthlySavings: number;
+  recoveryTarget: number;
+}) {
+  if (monthlySavings <= 0) {
+    return null;
+  }
+
+  let cumulativeSavings = 0;
+  const maxMonths = Math.max(currentSchedule.length, proposedSchedule.length);
+
+  for (let index = 0; index < maxMonths; index += 1) {
+    const currentInterest = currentSchedule[index]?.interest_paid ?? 0;
+    const proposedInterest = proposedSchedule[index]?.interest_paid ?? 0;
+    const extraInterestCost = Math.max(0, proposedInterest - currentInterest);
+    cumulativeSavings += monthlySavings - extraInterestCost;
+
+    if (cumulativeSavings >= recoveryTarget) {
+      return index + 1;
+    }
+  }
+
+  return null;
+}
+
+function calculateCashOutCostOverStay({
+  cashOutAmount,
+  currentLoanBalance,
+  proposedMonthlyRate,
+  proposedMonths,
+  stayMonths
+}: {
+  cashOutAmount: number;
+  currentLoanBalance: number;
+  proposedMonthlyRate: number;
+  proposedMonths: number;
+  stayMonths: number;
+}) {
+  if (cashOutAmount <= 0) {
+    return 0;
+  }
+
+  const paymentWithCashOut = calculateMonthlyPayment(currentLoanBalance + cashOutAmount, proposedMonthlyRate, proposedMonths);
+  const paymentWithoutCashOut = calculateMonthlyPayment(currentLoanBalance, proposedMonthlyRate, proposedMonths);
+  const scheduleWithCashOut = buildMonthlyAmortizationSchedule(
+    currentLoanBalance + cashOutAmount,
+    proposedMonthlyRate,
+    paymentWithCashOut,
+    proposedMonths
+  );
+  const scheduleWithoutCashOut = buildMonthlyAmortizationSchedule(
+    currentLoanBalance,
+    proposedMonthlyRate,
+    paymentWithoutCashOut,
+    proposedMonths
+  );
+
+  return roundMoney(
+    sumScheduleInterest(scheduleWithCashOut, stayMonths) - sumScheduleInterest(scheduleWithoutCashOut, stayMonths)
+  );
+}
+
+function riskLevelFromBand(band: RiskBand): "Low" | "Moderate" | "High" {
+  if (band === "HIGH") {
+    return "High";
+  }
+
+  if (band === "MODERATE") {
+    return "Moderate";
+  }
+
+  return "Low";
+}
+
 function calculateSharedRefinance(
   input: RefinanceInput,
   currentSchedule: PaymentSchedule,
@@ -1034,11 +1217,8 @@ function calculateSharedRefinance(
   const pointsCost = calculatePointsCost(input, newLoanAmount);
   const totalUpfrontCost = input.closingCosts + pointsCost;
   const monthlySavings = currentSchedule.monthlyPayment - proposedSchedule.monthlyPayment;
-  const breakEvenMonths = monthlySavings > 0 ? totalUpfrontCost / monthlySavings : null;
   const stayMonths = yearsToMonths(input.expectedStayYears);
   const staySavings = monthlySavings * stayMonths;
-  const stayPeriodSavings = monthlySavings * stayMonths - totalUpfrontCost;
-  const trueNetOutcome = staySavings - totalUpfrontCost - input.cashOutAmount;
   const currentMonthlySchedule = buildMonthlyAmortizationSchedule(
     input.currentLoanBalance,
     currentMonthlyRate,
@@ -1053,8 +1233,32 @@ function calculateSharedRefinance(
   );
   const totalInterestCurrent = currentMonthlySchedule.reduce((total, row) => total + row.interest_paid, 0);
   const totalInterestNew = proposedMonthlySchedule.reduce((total, row) => total + row.interest_paid, 0);
-  const interestDifference = totalInterestCurrent - totalInterestNew;
-  const trueCostDifference = totalInterestNew + totalUpfrontCost + input.cashOutAmount - totalInterestCurrent;
+  const interestSavedFullTerm = roundMoney(totalInterestCurrent - totalInterestNew);
+  const interestSavedStayPeriod = roundMoney(
+    sumScheduleInterest(currentMonthlySchedule, stayMonths) - sumScheduleInterest(proposedMonthlySchedule, stayMonths)
+  );
+  const effectiveMonthlyBenefit = stayMonths > 0 ? roundMoney(interestSavedStayPeriod / stayMonths) : 0;
+  const cashOutCostOverStay = calculateCashOutCostOverStay({
+    cashOutAmount: input.cashOutAmount,
+    currentLoanBalance: input.currentLoanBalance,
+    proposedMonthlyRate,
+    proposedMonths,
+    stayMonths
+  });
+  const breakEvenMonths = calculateExactBreakEvenMonth({
+    currentSchedule: currentMonthlySchedule,
+    proposedSchedule: proposedMonthlySchedule,
+    monthlySavings,
+    recoveryTarget: totalUpfrontCost + input.cashOutAmount
+  });
+  const termExtensionMonths = Math.max(0, proposedMonths - currentMonths);
+  const extensionPenaltyFactor = 0;
+  const stayPeriodSavings = roundMoney(staySavings - totalUpfrontCost);
+  const trueNetOutcome = roundMoney(staySavings - totalUpfrontCost - cashOutCostOverStay - extensionPenaltyFactor);
+  const cashOutROI =
+    input.cashOutAmount > 0 && trueNetOutcome > 0 ? roundMoney(trueNetOutcome / input.cashOutAmount) : null;
+  const netBenefitAfterCashOut = roundMoney(trueNetOutcome);
+  const trueCostDifference = roundMoney(totalInterestNew + totalUpfrontCost + cashOutCostOverStay - totalInterestCurrent);
   const totalCostIncrease = trueCostDifference;
   const currentTotalPayments = roundMoney(input.currentLoanBalance + totalInterestCurrent);
   const proposedTotalPayments = roundMoney(newLoanAmount + totalInterestNew + totalUpfrontCost);
@@ -1065,10 +1269,16 @@ function calculateSharedRefinance(
     monthlySavings,
     breakEvenMonths,
     trueNetOutcome,
-    interestDifference,
+    interestSavedStayPeriod,
+    interestSavedFullTerm,
+    effectiveMonthlyBenefit,
+    cashOutCostOverStay,
+    cashOutROI,
     trueCostDifference,
-    newLoanAmount
+    newLoanAmount,
+    currentSchedule.monthlyPayment
   );
+  const decisionRiskLevel = riskLevelFromBand(decision.riskBand);
   const amortization = buildAmortizationPreview({
     currentPrincipal: input.currentLoanBalance,
     proposedPrincipal: newLoanAmount,
@@ -1091,13 +1301,35 @@ function calculateSharedRefinance(
       : null;
 
   return {
+    currentPayment: roundMoney(currentSchedule.monthlyPayment),
+    newPayment: roundMoney(proposedSchedule.monthlyPayment),
+    monthlySavings,
+    breakEvenMonths,
+    interestSavedStayPeriod,
+    interestSavedFullTerm,
+    effectiveMonthlyBenefit,
+    trueNetOutcome,
+    cashOutROI,
+    riskScore: decision.riskScore,
+    riskLevel: decisionRiskLevel,
+    termExtensionMonths,
+    cashOutCostOverStay,
     monthly_payment_current: roundMoney(currentSchedule.monthlyPayment),
     monthly_payment_new: roundMoney(proposedSchedule.monthlyPayment),
     monthly_savings: monthlySavings,
     break_even_months: breakEvenMonths,
+    exact_break_even_month: breakEvenMonths,
     stay_period_savings: stayPeriodSavings,
     true_net_outcome: trueNetOutcome,
-    interest_difference_rate_only: interestDifference,
+    interest_difference_rate_only: interestSavedStayPeriod,
+    interest_saved_stay_period: interestSavedStayPeriod,
+    interest_saved_full_term: interestSavedFullTerm,
+    effective_monthly_benefit: effectiveMonthlyBenefit,
+    cash_out_cost_over_stay: cashOutCostOverStay,
+    cash_out_roi: cashOutROI,
+    net_benefit_after_cash_out: netBenefitAfterCashOut,
+    term_extension_months: termExtensionMonths,
+    risk_level: decisionRiskLevel,
     recommendation: recommendationLabel(decision.recommendation),
     recommendation_type: recommendationType(decision.recommendation),
     headline: decision.headline,
@@ -1130,7 +1362,9 @@ function calculateSharedRefinance(
     amortization_summary: {
       total_interest_current: totalInterestCurrent,
       total_interest_new: totalInterestNew,
-      interest_difference: interestDifference,
+      interest_difference: interestSavedFullTerm,
+      interest_saved_stay_period: interestSavedStayPeriod,
+      interest_saved_full_term: interestSavedFullTerm,
       payoff_time_difference: currentMonthlySchedule.length - proposedMonthlySchedule.length
     },
     current: {
@@ -1162,11 +1396,20 @@ function calculateSharedRefinance(
     comparison: {
       monthlySavings,
       breakEvenMonths,
+      exactBreakEvenMonth: breakEvenMonths,
       stayPeriodSavings,
       trueNetOutcome,
       debtVsBenefit: decision.debtVsBenefit,
-      interestDifferenceRateOnly: interestDifference,
+      interestDifferenceRateOnly: interestSavedStayPeriod,
+      interestSavedStayPeriod,
+      interestSavedFullTerm,
+      effectiveMonthlyBenefit,
       cashOutAmount: roundMoney(input.cashOutAmount),
+      cashOutCostOverStay,
+      cashOutROI,
+      netBenefitAfterCashOut,
+      termExtensionMonths,
+      riskLevel: decisionRiskLevel,
       pointsCost,
       totalUpfrontCost,
       totalClosingCosts: totalUpfrontCost,
