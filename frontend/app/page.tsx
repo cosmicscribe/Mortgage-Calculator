@@ -1033,7 +1033,7 @@ export default function HomePage() {
                 </div>
               </motion.section>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+              <div className="metrics-grid">
                 <Metric
                   detail={`${form.currentRemainingYears} years remaining`}
                   icon={CircleDollarSign}

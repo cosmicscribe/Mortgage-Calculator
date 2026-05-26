@@ -507,11 +507,17 @@ button:disabled {
   backdrop-filter: blur(14px);
 }
 
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
 .metric-value {
   max-width: 100%;
-  overflow-wrap: normal;
-  white-space: nowrap;
-  font-size: clamp(1.28rem, 1.32vw, 1.58rem);
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: clamp(1.16rem, 1.18vw, 1.54rem);
   font-weight: 900;
   letter-spacing: 0;
   line-height: 1.12;
