@@ -384,6 +384,7 @@ export default function HomePage() {
   const [rateMode, setRateMode] = useState<"lender" | "custom">("lender");
   const [settingsSyncedAt, setSettingsSyncedAt] = useState<Date | null>(null);
   const [amortizationView, setAmortizationView] = useState<AmortizationView>("yearly");
+  const [lastCalculatedKey, setLastCalculatedKey] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const formRef = useRef(form);
   const rateModeRef = useRef(rateMode);
@@ -432,6 +433,7 @@ export default function HomePage() {
       const data = (await response.json()) as RefinanceResult;
       if (calculationRequestIdRef.current === requestId) {
         setResult(data);
+        setLastCalculatedKey(calculationKey);
       }
     } catch (caught) {
       if (calculationRequestIdRef.current === requestId) {
@@ -633,6 +635,8 @@ export default function HomePage() {
   const currencyPrefix = form.country === "CA" ? "C$" : "$";
   const savingsPositive = (result?.comparison.trueNetOutcome ?? 0) > 0;
   const cta = result ? getCTA(result.decision.recommendation) : null;
+  const currentCalculationKey = useMemo(() => JSON.stringify(toPayload(form)), [form]);
+  const hasStaleResults = result !== null && lastCalculatedKey !== currentCalculationKey;
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -883,7 +887,7 @@ export default function HomePage() {
 
             <button className="primary-action" disabled={isLoading} type="submit">
               {isLoading ? <RefreshCw className="animate-spin" size={20} /> : <ArrowRight size={20} />}
-              {productMode}
+              {hasStaleResults ? "Update results" : productMode}
             </button>
           </form>
 
@@ -908,6 +912,11 @@ export default function HomePage() {
                   {result ? (
                     <span className={`decision-chip ${savingsPositive ? "is-good" : "is-caution"}`}>
                       {decisionLabel(result.decision.recommendation)}
+                    </span>
+                  ) : null}
+                  {result ? (
+                    <span className={`freshness-chip ${hasStaleResults ? "is-stale" : "is-current"}`}>
+                      {hasStaleResults ? "Inputs changed - update results" : "Results based on current inputs"}
                     </span>
                   ) : null}
                 </div>
