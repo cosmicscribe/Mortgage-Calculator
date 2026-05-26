@@ -2,7 +2,12 @@
   "name": "mortgage-calculator-workspace",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
+    "build": "npm --prefix backend run build",
+    "start": "npm --prefix backend run start:prod",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:backend": "npm --prefix backend run start:dev",
     "dev:admin": "npm --prefix frontend run dev",

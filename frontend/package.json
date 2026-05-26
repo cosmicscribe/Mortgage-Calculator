@@ -2,6 +2,9 @@
   "name": "mortgage-refinance-calculator",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,7 +16,6 @@
   "dependencies": {
     "framer-motion": "^11.18.2",
     "lucide-react": "^0.468.0",
-    "mortgage-calculator-workspace": "file:..",
     "next": "^15.1.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
