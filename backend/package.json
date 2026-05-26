@@ -5,6 +5,7 @@
   "scripts": {
     "start": "nest start",
     "start:dev": "nest start --watch",
+    "start:prod": "node dist/main.js",
     "build": "nest build",
     "typecheck": "tsc --noEmit"
   },
@@ -14,7 +15,6 @@
     "@nestjs/platform-express": "^11.1.24",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
-    "mortgage-calculator-workspace": "file:..",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^3.24.1"
