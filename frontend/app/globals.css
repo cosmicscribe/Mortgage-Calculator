@@ -515,9 +515,9 @@ button:disabled {
 
 .metric-value {
   max-width: 100%;
-  overflow-wrap: anywhere;
-  white-space: normal;
-  font-size: clamp(1.16rem, 1.18vw, 1.54rem);
+  overflow-wrap: normal;
+  white-space: nowrap;
+  font-size: clamp(0.88rem, 0.9vw, 1.12rem);
   font-weight: 900;
   letter-spacing: 0;
   line-height: 1.12;
